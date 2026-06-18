@@ -11,6 +11,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class ClientFlowViewModel(context: Context) : ViewModel() {
 
@@ -21,6 +29,250 @@ class ClientFlowViewModel(context: Context) : ViewModel() {
     ).fallbackToDestructiveMigration().build()
 
     private val repository = ClientFlowRepository(db)
+
+    // Therapist Profile Preferences States
+    private val prefs = context.applicationContext.getSharedPreferences("therapist_profile_prefs", Context.MODE_PRIVATE)
+
+    private val _therapistName = MutableStateFlow(prefs.getString("therapist_name", "Dr. Barry Love, Psy.D.") ?: "")
+    val therapistName = _therapistName.asStateFlow()
+
+    private val _therapistEmail = MutableStateFlow(prefs.getString("therapist_email", "lovebarry030@gmail.com") ?: "")
+    val therapistEmail = _therapistEmail.asStateFlow()
+
+    private val _therapistNpi = MutableStateFlow(prefs.getString("therapist_npi", "1098234857") ?: "")
+    val therapistNpi = _therapistNpi.asStateFlow()
+
+    private val _therapistClinic = MutableStateFlow(prefs.getString("therapist_clinic", "AuraMind Clinical Psychotherapy") ?: "")
+    val therapistClinic = _therapistClinic.asStateFlow()
+
+    private val _therapistBio = MutableStateFlow(prefs.getString("therapist_bio", "Clinical Neuropsychologist specializing in modern tech-focused CBT treatment, exposure diagnostics, and integrated wellness tracking.") ?: "")
+    val therapistBio = _therapistBio.asStateFlow()
+
+    private val _therapistSpecialties = MutableStateFlow(prefs.getString("therapist_specialties", "CBT, PTSD, Trauma, Stress, Mindfulness") ?: "")
+    val therapistSpecialties = _therapistSpecialties.asStateFlow()
+
+    private val _therapistPhone = MutableStateFlow(prefs.getString("therapist_phone", "+1 (555) 349-2192") ?: "")
+    val therapistPhone = _therapistPhone.asStateFlow()
+
+    // Registration and User Persona flow states
+    private val _userRole = MutableStateFlow(prefs.getString("user_role", "therapist") ?: "therapist")
+    val userRole = _userRole.asStateFlow()
+
+    private val _isRegistered = MutableStateFlow(prefs.getBoolean("is_registered", false))
+    val isRegistered = _isRegistered.asStateFlow()
+
+    // AI Personal Assistant State Flows
+    private val _aiResponse = MutableStateFlow<String?>(null)
+    val aiResponse = _aiResponse.asStateFlow()
+
+    private val _isAiLoading = MutableStateFlow(false)
+    val isAiLoading = _isAiLoading.asStateFlow()
+
+    private val _chatHistory = MutableStateFlow<List<Pair<String, Boolean>>>(emptyList())
+    val chatHistory = _chatHistory.asStateFlow()
+
+    fun clearChat() {
+        _chatHistory.value = emptyList()
+        _aiResponse.value = null
+    }
+
+    fun sendAiAssistantMessage(messageText: String) {
+        if (messageText.isBlank()) return
+        
+        // Add user message to history
+        val currentHistory = _chatHistory.value.toMutableList()
+        currentHistory.add(messageText to true)
+        _chatHistory.value = currentHistory
+        
+        _isAiLoading.value = true
+        _aiResponse.value = null
+        
+        viewModelScope.launch {
+            val isTherapistRole = _userRole.value == "therapist"
+            val systemInstruction = if (isTherapistRole) {
+                "You are an expert Clinical Assistant for professional therapist Dr. Barry Love. Assist in analyzing patient logs: providing professional CBT summaries, reframing, and organizing daily clinical journals."
+            } else {
+                "You are a warm, highly-supportive, and empathetic Personal Mindful Journaling Assistant. Help the user clarify thoughts, manage anxiety/mood swings, practice cognitive reframes (therapist-quality CBT elements adapted for journaling), and achieve positive wellbeing. Support conversational venting with concise, helpful reflection."
+            }
+            
+            // Build simple conversation context
+            val conversationContext = StringBuilder()
+            conversationContext.append("Here is the history of our conversation:\n")
+            currentHistory.takeLast(10).forEach { (msg, isUser) ->
+                if (isUser) {
+                    conversationContext.append("User: $msg\n")
+                } else {
+                    conversationContext.append("Assistant: $msg\n")
+                }
+            }
+            conversationContext.append("\nPlease reply only to the latest message as a Personal Assistant.")
+
+            val result = queryGeminiRaw(conversationContext.toString(), systemInstruction)
+            
+            // Add AI response to history
+            val updatedHistory = _chatHistory.value.toMutableList()
+            updatedHistory.add(result to false)
+            _chatHistory.value = updatedHistory
+            _aiResponse.value = result
+            _isAiLoading.value = false
+        }
+    }
+
+    private suspend fun queryGeminiRaw(prompt: String, systemInstruction: String?): String = withContext(Dispatchers.IO) {
+        // Try reading config API KEY
+        val apiKey = try {
+            com.example.BuildConfig.GEMINI_API_KEY
+        } catch (e: Throwable) {
+            "MY_GEMINI_API_KEY"
+        }
+
+        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+            // Local high-fidelity smart heuristic responder if API key is not entered
+            return@withContext getLocalAssistantResponse(prompt)
+        }
+
+        val client = OkHttpClient.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+
+        val jsonRequest = JSONObject().apply {
+            val contentsArray = JSONArray().apply {
+                val contentObj = JSONObject().apply {
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().put("text", prompt))
+                    })
+                }
+                put(contentObj)
+            }
+            put("contents", contentsArray)
+
+            if (systemInstruction != null) {
+                put("systemInstruction", JSONObject().apply {
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().put("text", systemInstruction))
+                    })
+                })
+            }
+        }
+
+        val requestBody = jsonRequest.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey"
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext "Error ${response.code}: ${response.message}. Enter a valid API key to unlock real-time Gemini AI response."
+                }
+                val body = response.body?.string() ?: ""
+                val responseObj = JSONObject(body)
+                val candidates = responseObj.getJSONArray("candidates")
+                val candidateObj = candidates.getJSONObject(0)
+                val responseContent = candidateObj.getJSONObject("content")
+                val responseParts = responseContent.getJSONArray("parts")
+                responseParts.getJSONObject(0).getString("text")
+            }
+        } catch (e: Exception) {
+            getLocalAssistantResponse(prompt) + " (Offline Mode active - ${e.localizedMessage})"
+        }
+    }
+
+    private fun getLocalAssistantResponse(prompt: String): String {
+        val lower = prompt.lowercase()
+        return when {
+            lower.contains("anxious") || lower.contains("anxiety") || lower.contains("fear") -> {
+                "It sounds like anxiety is quite high right now. Let's do a quick grounding regulation:\n" +
+                "1. **Breathe**: Inhale for 4s, hold for 4s, exhale for 4s.\n" +
+                "2. **Acknowledge**: What are 3 things you can see in the room?\n" +
+                "3. **Reframer**: What is the worst-case scenario, and how likely is it compared to a realistic alternative?\n\n" +
+                "*Note: Unlock fully dynamic, real-time Gemini AI coaching by entering a valid GEMINI_API_KEY in the secrets menu!*"
+            }
+            lower.contains("sad") || lower.contains("depressed") || lower.contains("down") || lower.contains("grief") -> {
+                "I hear you, and it's completely okay to feel down. Let's practice compassionate pacing:\n" +
+                "- What is a tiny, manageable action you can take right now? (e.g. drinking water, walking around for 2 minutes)\n" +
+                "- Acknowledge your emotion without judgment. It doesn't define your entire day.\n\n" +
+                "*Note: Configure your GEMINI_API_KEY in the secrets menu to unleash personalized Gemini AI journaling guidance!*"
+            }
+            lower.contains("hello") || lower.contains("hi") || lower.contains("assistant") || lower.contains("who are you") -> {
+                "Hello there! I am your Mindful Journaling Assistant. I can help you reflect on your feelings, review your clinical diaries, plan daily cognitive tasks, or provide instant CBT grounding practices!\n\n" +
+                "How are you feeling today? Tell me what is on your mind."
+            }
+            else -> {
+                "A thoughtful journaling entry. Taking a moment to express what is on your mind is an excellent mindfulness practice.\n" +
+                "- How does writing this down change your somatic perspective?\n" +
+                "- What coping strategy or regulation phase would best serve you in this exact moment?\n\n" +
+                "*Note: To unleash fully dynamic, personalized Gemini AI advice, make sure to add your GEMINI_API_KEY in the secrets menu!*"
+            }
+        }
+    }
+
+    fun registerUser(
+        role: String,
+        name: String,
+        email: String,
+        title: String,
+        bio: String,
+        specialties: String,
+        phone: String,
+        pin: String? = null,
+        pinEnabled: Boolean = false
+    ) {
+        prefs.edit().apply {
+            putString("user_role", role)
+            putBoolean("is_registered", true)
+            putString("therapist_name", name)
+            putString("therapist_email", email)
+            putString("therapist_clinic", title)
+            putString("therapist_bio", bio)
+            putString("therapist_specialties", specialties)
+            putString("therapist_phone", phone)
+            apply()
+        }
+        _userRole.value = role
+        _isRegistered.value = true
+        _therapistName.value = name
+        _therapistEmail.value = email
+        _therapistClinic.value = title
+        _therapistBio.value = bio
+        _therapistSpecialties.value = specialties
+        _therapistPhone.value = phone
+
+        if (pin != null) {
+            updatePrivacyConfig(pin = pin, pinEnabled = pinEnabled)
+        }
+    }
+
+    fun updateTherapistProfile(
+        name: String,
+        email: String,
+        npi: String,
+        clinic: String,
+        bio: String,
+        specialties: String,
+        phone: String
+    ) {
+        prefs.edit().apply {
+            putString("therapist_name", name)
+            putString("therapist_email", email)
+            putString("therapist_npi", npi)
+            putString("therapist_clinic", clinic)
+            putString("therapist_bio", bio)
+            putString("therapist_specialties", specialties)
+            putString("therapist_phone", phone)
+            apply()
+        }
+        _therapistName.value = name
+        _therapistEmail.value = email
+        _therapistNpi.value = npi
+        _therapistClinic.value = clinic
+        _therapistBio.value = bio
+        _therapistSpecialties.value = specialties
+        _therapistPhone.value = phone
+    }
 
     // Central Data Flows
     val patients: StateFlow<List<PatientEntity>> = repository.allPatients

@@ -1,5 +1,5 @@
 {
-  "name": "ClientFlow",
+  "name": "Client Flow",
   "description": "An offline-first clinical companion applet featuring practitioner dashboards, patient caseload index, mood calendars, visual sleep-mood correlations, and secure privacy shields.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

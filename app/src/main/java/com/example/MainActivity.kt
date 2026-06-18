@@ -144,7 +144,7 @@ fun HeaderArea(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(12.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
@@ -353,11 +353,11 @@ fun WorkspaceArea(
         // Navigation Tabs Bar
         ScrollableTabRow(
             selectedTabIndex = activeTab,
-            edgePadding = 12.dp,
+            edgePadding = 16.dp,
             containerColor = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.primary,
             divider = {},
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
         ) {
             Tab(
                 selected = activeTab == 0,
@@ -451,7 +451,7 @@ fun CaseloadControlsPanel(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.04f)
@@ -632,8 +632,8 @@ fun CasefileLogsTab(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Analytical performance metrics counters
             item {
@@ -811,33 +811,40 @@ fun PerformanceMetricsOverview(
     complianceAvg: Float,
     activePatientName: String
 ) {
+    val formattedFilesCount = if (activeFilesCount < 10) String.format(Locale.getDefault(), "%02d", activeFilesCount) else "$activeFilesCount"
+    val formattedBillingCount = if (billingCount < 10) String.format(Locale.getDefault(), "%02d", billingCount) else "$billingCount"
+    val formattedCompliance = "${(complianceAvg * 100).toInt()}%"
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         MetricItemCard(
             modifier = Modifier.weight(1f),
-            title = "Active Files",
-            value = "$activeFilesCount",
+            title = "FILES",
+            value = formattedFilesCount,
             icon = Icons.Filled.Person,
-            subText = "Client Index"
+            subText = "Client Index",
+            isFilled = true
         )
         MetricItemCard(
             modifier = Modifier.weight(1f),
-            title = "Consultations",
-            value = "$billingCount",
+            title = "COMPLY",
+            value = formattedCompliance,
             icon = Icons.Filled.Check,
-            subText = "Total Sheets"
+            subText = activePatientName,
+            isFilled = false,
+            progress = complianceAvg
         )
         MetricItemCard(
-            modifier = Modifier.weight(1.2f),
-            title = "HW Compliance",
-            value = "${(complianceAvg * 100).toInt()}%",
+            modifier = Modifier.weight(1f),
+            title = "SESSION",
+            value = formattedBillingCount,
             icon = Icons.Filled.List,
-            subText = activePatientName,
-            progress = complianceAvg
+            subText = "Total Sheets",
+            isFilled = false
         )
     }
 }
@@ -849,37 +856,66 @@ fun MetricItemCard(
     value: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     subText: String,
-    progress: Float? = null
+    progress: Float? = null,
+    isFilled: Boolean = false
 ) {
+    val containerColor = if (isFilled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+    val contentColor = if (isFilled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val titleColor = if (isFilled) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val iconColor = if (isFilled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
+
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = containerColor,
+            contentColor = contentColor
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+        border = if (isFilled) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        elevation = CardDefaults.cardElevation(0.dp)
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(text = title, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Icon(imageVector = icon, contentDescription = title, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(13.dp))
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(text = value, fontSize = 18.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = value,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = contentColor
+            )
             Spacer(modifier = Modifier.height(2.dp))
-            Text(text = subText, fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = titleColor
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = iconColor,
+                    modifier = Modifier.size(10.dp)
+                )
+            }
             if (progress != null) {
                 Spacer(modifier = Modifier.height(4.dp))
                 LinearProgressIndicator(
                     progress = progress,
-                    modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                    modifier = Modifier
+                        .fillMaxWidth(0.8f)
+                        .height(3.dp)
+                        .clip(CircleShape),
+                    color = iconColor,
+                    trackColor = iconColor.copy(alpha = 0.15f)
                 )
             }
         }
@@ -1282,8 +1318,8 @@ fun MoodCalendarTab(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Filter info header
         item {
@@ -1601,8 +1637,8 @@ fun AnalyticsTab(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Range Filter Buttons Toggle Hub
         item {
@@ -1876,8 +1912,8 @@ fun DeltaCompareTab(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Card(

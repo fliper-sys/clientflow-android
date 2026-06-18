@@ -321,7 +321,20 @@ class ClientFlowViewModel(context: Context) : ViewModel() {
     private val _deltaSessionTwoId = MutableStateFlow<Int?>(null)
     val deltaSessionTwoId: StateFlow<Int?> = _deltaSessionTwoId.asStateFlow()
 
+    // Firebase Cloud Sync Status Toggles
+    val cloudSyncStatus = FirebaseSyncManager.syncStatus
+    val isCloudSyncing = FirebaseSyncManager.isSyncing
+
+    fun triggerCloudSync() {
+        viewModelScope.launch {
+            FirebaseSyncManager.executeFullBilateralSync(db)
+        }
+    }
+
     init {
+        // Programmatic Firebase sync engine setup
+        FirebaseSyncManager.initialize(context)
+
         // Observe privacyConfig lock status on launch
         viewModelScope.launch {
             privacyConfig.collect { config ->
@@ -435,9 +448,12 @@ class ClientFlowViewModel(context: Context) : ViewModel() {
                     energyLevel = 5,
                     focusTags = "Mood Log"
                 )
-                repository.insertSession(newSession)
+                val newId = repository.insertSession(newSession)
                 updatePatientHomeworkRatio(patientId)
                 closeQuickMoodLog()
+
+                // Replicate to cloud
+                FirebaseSyncManager.saveSessionToCloud(newSession.copy(id = newId.toInt()))
             }
         }
     }
@@ -473,8 +489,11 @@ class ClientFlowViewModel(context: Context) : ViewModel() {
                 energyLevel = energyLevel,
                 focusTags = focusTags
             )
-            repository.insertSession(newSession)
+            val newId = repository.insertSession(newSession)
             updatePatientHomeworkRatio(patientId)
+
+            // Replicate to cloud
+            FirebaseSyncManager.saveSessionToCloud(newSession.copy(id = newId.toInt()))
         }
     }
 
@@ -499,6 +518,9 @@ class ClientFlowViewModel(context: Context) : ViewModel() {
             )
             val newId = repository.insertPatient(newPatient)
             _selectedPatientId.value = newId.toInt()
+
+            // Replicate to cloud
+            FirebaseSyncManager.savePatientToCloud(newPatient.copy(id = newId.toInt()))
         }
     }
 

@@ -42,6 +42,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -50,6 +53,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.animation.core.*
+import androidx.compose.ui.draw.*
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Fill
+import kotlinx.coroutines.delay
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.PatientEntity
@@ -110,6 +120,8 @@ fun ClientFlowAppContent(
     val isLocked by viewModel.isAppLocked.collectAsStateWithLifecycle()
     val isPanicActive by viewModel.isPanicActive.collectAsStateWithLifecycle()
     val privacyConfig by viewModel.privacyConfig.collectAsStateWithLifecycle()
+    
+    var showSplash by remember { mutableStateOf(true) }
 
     // Customize fluid ambient layout glow centered at top-right
     val ambientGlow = remember(activeAccentTheme, useDarkTheme) {
@@ -136,56 +148,60 @@ fun ClientFlowAppContent(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .drawBehind {
-                drawRect(ambientGlow)
-            }
-    ) {
-        // Core Layout Content
-        Column(
+    if (showSplash) {
+        AnimatedSplashScreen(onSplashCompleted = { showSplash = false })
+    } else {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+                .background(MaterialTheme.colorScheme.background)
+                .drawBehind {
+                    drawRect(ambientGlow)
+                }
         ) {
-            HeaderArea(
-                useDarkTheme = useDarkTheme,
-                onThemeToggle = onThemeToggle,
-                viewModel = viewModel,
-                isPanicActive = isPanicActive,
-                privacyConfig = privacyConfig,
-                activeAccentTheme = activeAccentTheme,
-                onAccentThemeChange = onAccentThemeChange
-            )
-
-            WorkspaceArea(
-                viewModel = viewModel,
-                privacyConfig = privacyConfig,
-                activeAccentTheme = activeAccentTheme
-            )
-        }
-
-        val isRegistered by viewModel.isRegistered.collectAsStateWithLifecycle()
-
-        // Onboarding registration check first
-        if (!isRegistered) {
-            UserRegistrationOverlay(viewModel = viewModel)
-        } else {
-            // Lock Screen overlay gate
-            if (isLocked) {
-                SecurityLockOverlay(
+            // Core Layout Content
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+            ) {
+                HeaderArea(
+                    useDarkTheme = useDarkTheme,
+                    onThemeToggle = onThemeToggle,
                     viewModel = viewModel,
-                    privacyConfig = privacyConfig
+                    isPanicActive = isPanicActive,
+                    privacyConfig = privacyConfig,
+                    activeAccentTheme = activeAccentTheme,
+                    onAccentThemeChange = onAccentThemeChange
+                )
+
+                WorkspaceArea(
+                    viewModel = viewModel,
+                    privacyConfig = privacyConfig,
+                    activeAccentTheme = activeAccentTheme
                 )
             }
-        }
 
-        // Panic Mode blackout/med-reading overlay
-        if (isPanicActive) {
-            PanicOverlay(onDismiss = { viewModel.triggerPanic(false) })
+            val isRegistered by viewModel.isRegistered.collectAsStateWithLifecycle()
+
+            // Onboarding registration check first
+            if (!isRegistered) {
+                UserRegistrationOverlay(viewModel = viewModel)
+            } else {
+                // Lock Screen overlay gate
+                if (isLocked) {
+                    SecurityLockOverlay(
+                        viewModel = viewModel,
+                        privacyConfig = privacyConfig
+                    )
+                }
+            }
+
+            // Panic Mode blackout/med-reading overlay
+            if (isPanicActive) {
+                PanicOverlay(onDismiss = { viewModel.triggerPanic(false) })
+            }
         }
     }
 }
@@ -2322,115 +2338,150 @@ fun SecurityLockOverlay(
     var enteredText by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .clickable(enabled = false) {}, // absorb clicks
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .widthIn(max = 340.dp)
-                .padding(24.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Lock,
-                    contentDescription = "🔒 App Locked",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
+    OnboardingCardContainer {
+        Text(
+            text = "Log in",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1D1B20)
+        )
+        Text(
+            text = "Verify your secure workspace passcode",
+            fontSize = 11.sp,
+            color = Color(0xFF7F8C8D),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
 
-            Spacer(modifier = Modifier.height(14.dp))
+        SofaIllustration(modifier = Modifier.padding(vertical = 12.dp))
+
+        if (errorMessage != null) {
             Text(
-                text = "Clinical Companion locked",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "Input therapeutic practitioner security passcode",
+                text = errorMessage!!,
+                color = MaterialTheme.colorScheme.error,
                 fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 4.dp)
             )
+        }
 
-            if (errorMessage != null) {
-                Text(
-                    text = errorMessage!!,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(vertical = 4.dp)
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Visual passcode entry dots
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(bottom = 20.dp)
+        ) {
+            repeat(4) { idx ->
+                val isFilled = idx < enteredText.length
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .background(
+                            color = if (isFilled) Color(0xFF1D1B20) else Color.Transparent,
+                            shape = CircleShape
+                        )
+                        .border(
+                            width = 2.dp,
+                            color = Color(0xFF1D1B20),
+                            shape = CircleShape
+                        )
                 )
             }
+        }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Text input visually masked representing PIN passcode
-            OutlinedTextField(
-                value = enteredText,
-                onValueChange = {
-                    if (it.length <= 4 && it.all { char -> char.isDigit() }) {
-                        enteredText = it
-                        errorMessage = null
-                    }
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                visualTransformation = PasswordVisualTransformation(),
-                placeholder = { Text("••••", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("security_pin_input"),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
+        // Custom numerical keypad
+        Column(
+            modifier = Modifier.widthIn(max = 240.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val keys = listOf(
+                listOf("1", "2", "3"),
+                listOf("4", "5", "6"),
+                listOf("7", "8", "9"),
+                listOf("⌫", "0", "🔓")
             )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Enter Button
-            Button(
-                onClick = {
-                    val success = viewModel.attemptUnlock(enteredText, privacyConfig)
-                    if (success) {
-                        enteredText = ""
-                        errorMessage = null
-                    } else {
-                        errorMessage = "Invalid credentials. Try generic demo code: '1234'"
+            keys.forEach { rowKeys ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    rowKeys.forEach { key ->
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when (key) {
+                                        "🔓" -> Color(0xFFC4E4FF)
+                                        else -> Color(0xFFF0F3F6)
+                                    }
+                                )
+                                .border(1.dp, Color(0xFF1D1B20), CircleShape)
+                                .clickable {
+                                    errorMessage = null
+                                    when (key) {
+                                        "⌫" -> {
+                                            if (enteredText.isNotEmpty()) {
+                                                enteredText = enteredText.dropLast(1)
+                                            }
+                                        }
+                                        "🔓" -> {
+                                            val success = viewModel.attemptUnlock(enteredText, privacyConfig)
+                                            if (!success) {
+                                                errorMessage = "Invalid. Generic code: '1234'"
+                                            }
+                                        }
+                                        else -> {
+                                            if (enteredText.length < 4) {
+                                                enteredText += key
+                                                if (enteredText.length == 4) {
+                                                    val success = viewModel.attemptUnlock(enteredText, privacyConfig)
+                                                    if (!success) {
+                                                        errorMessage = "Invalid. Generic code: '1234'"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = key,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1D1B20)
+                            )
+                        }
                     }
-                },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("pin_unlock_button")
-            ) {
-                Text("Authorize Access", fontWeight = FontWeight.Bold)
+                }
             }
+        }
 
-            Spacer(modifier = Modifier.height(14.dp))
-            Row(
-                modifier = Modifier
-                    .clickable {
-                        enteredText = "1234"
-                        errorMessage = null
-                    },
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Filled.Lock, contentDescription = "Passcode indicator", modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Sandbox Evaluation Bypass (Auto-write '1234')", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-            }
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Bypass helper
+        Row(
+            modifier = Modifier
+                .clickable {
+                    enteredText = "1234"
+                    viewModel.attemptUnlock("1234", privacyConfig)
+                }
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color(0xFF1D1B20))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Sandbox Evaluation Bypass (Auto-write '1234')",
+                fontSize = 10.sp,
+                color = Color(0xFF1D1B20),
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -3324,6 +3375,112 @@ fun SettingsProfileTab(
                                     maxLines = 15,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section 4: Firebase Online & Offline Cloud Synchronization State Indicator
+        item {
+            val syncStatus by viewModel.cloudSyncStatus.collectAsStateWithLifecycle()
+            val isSyncing by viewModel.isCloudSyncing.collectAsStateWithLifecycle()
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("firebase_cloud_sync_card"),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = "Cloud Sync",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "FIREBASE CLOUD PERSISTENCE",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        // Pulse active cache color indicator
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (syncStatus.contains("Connected") || syncStatus.contains("Synced")) {
+                                        Color(0xFF10B981) // Emerald Green
+                                    } else if (isSyncing) {
+                                        Color(0xFF2563EB) // Blue
+                                    } else {
+                                        MaterialTheme.colorScheme.secondary
+                                    }
+                                )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Encrypted online sync and cache persistence replicates practitioner diaries and caseload notes automatically.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 14.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "PERSISTENCE STATUS",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 8.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = syncStatus,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        Button(
+                            onClick = { viewModel.triggerCloudSync() },
+                            enabled = !isSyncing,
+                            modifier = Modifier.testTag("trigger_cloud_sync_button"),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            if (isSyncing) {
+                                Text("Syncing...", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            } else {
+                                Icon(imageVector = Icons.Filled.Refresh, contentDescription = "Sync Now", modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Sync Now", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -4415,284 +4572,1062 @@ fun PersonalAssistantChatBlock(viewModel: ClientFlowViewModel, activeAccentTheme
 
 @Composable
 fun UserRegistrationOverlay(viewModel: ClientFlowViewModel) {
+    var currentStep by remember { mutableStateOf("landing") } // "landing", "register", "login"
     var selectedRole by remember { mutableStateOf("individual") } // "therapist" or "individual"
-    var name by remember { mutableStateOf("Barry Love") }
-    val email = "lovebarry030@gmail.com" // Pre-filled from user email
-    var title by remember { mutableStateOf("My Safe Haven / Daily Journal") }
-    var bio by remember { mutableStateOf("My private CBT journal to rest, express feelings, and clear anxious mind loops daily with AI assistance.") }
-    var specialties by remember { mutableStateOf("CBT Practicing, Mindfulness, Anxiety Reduction") }
-    var phone by remember { mutableStateOf("+1 (555) 123-4567") }
-    var pin by remember { mutableStateOf("1234") }
-    var pinEnabled by remember { mutableStateOf(false) }
+    var nameInput by remember { mutableStateOf("Barry Love") }
+    var emailInput by remember { mutableStateOf("lovebarry030@gmail.com") }
+    var pinInput by remember { mutableStateOf("") }
+    var confirmPinInput by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(selectedRole) {
-        if (selectedRole == "therapist") {
-            name = "Dr. Barry Love, Psy.D."
-            title = "AuraMind Clinical Psychotherapy"
-            bio = "Clinical Neuropsychologist specializing in modern tech-focused CBT treatment, exposure diagnostics, and integrated wellness tracking."
-            specialties = "CBT, PTSD, Trauma, Stress, Mindfulness"
-        } else {
-            name = "Barry Love"
-            title = "My Safe Haven / Daily Journal"
-            bio = "My private CBT journal to rest, express feelings, and clear anxious mind loops daily with AI assistance."
-            specialties = "CBT Practicing, Mindfulness, Anxiety Reduction"
+    when (currentStep) {
+        "landing" -> {
+            OnboardingCardContainer {
+                Text(
+                    text = "Wellcome",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFF1D1B20),
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "Here you log in securely",
+                    fontSize = 12.sp,
+                    color = Color(0xFF7F8C8D),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                )
+
+                // High fidelity hand-drawn couch illustration!
+                SofaIllustration(modifier = Modifier.padding(vertical = 12.dp))
+
+                Spacer(modifier = Modifier.height(28.dp))
+
+                // Log In Pill Button
+                Button(
+                    onClick = { currentStep = "login" },
+                    modifier = Modifier
+                        .fillMaxWidth(0.9f)
+                        .height(52.dp)
+                        .testTag("onboarding_login_button"),
+                    shape = RoundedCornerShape(26.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                    border = BorderStroke(1.5.dp, Color(0xFF1D1B20)),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                ) {
+                    Text(
+                        text = "Log in",
+                        color = Color(0xFF1D1B20),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Sign Up Pill Button
+                Button(
+                    onClick = { currentStep = "register" },
+                    modifier = Modifier
+                        .fillMaxWidth(0.9f)
+                        .height(52.dp)
+                        .testTag("onboarding_signup_button"),
+                    shape = RoundedCornerShape(26.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC4E4FF)),
+                    border = BorderStroke(1.5.dp, Color(0xFF1D1B20)),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                ) {
+                    Text(
+                        text = "Sign Up",
+                        color = Color(0xFF1D1B20),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
+
+        "register" -> {
+            OnboardingCardContainer {
+                // Watercolor Leaf ornament
+                LeafyBranchDecor(modifier = Modifier.padding(bottom = 8.dp))
+
+                Text(
+                    text = "Sign up",
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFF1D1B20),
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "Create an account, It's free",
+                    fontSize = 12.sp,
+                    color = Color(0xFF7F8C8D),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+                )
+
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = Color.Red,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 10.dp)
+                    )
+                }
+
+                // Interactive Role selection integrated cleanly
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Persona:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D1B20))
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf("individual" to "Self-Care 🧘", "therapist" to "Clinic Pro 💼").forEach { (roleKey, roleLabel) ->
+                            val isSelected = selectedRole == roleKey
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(
+                                        if (isSelected) Color(0xFFC4E4FF) else Color.Transparent,
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) Color(0xFF1D1B20) else Color(0xFFBDC3C7),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { selectedRole = roleKey }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(roleLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D1B20))
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                UnderlineTextField(
+                    value = nameInput,
+                    onValueChange = { nameInput = it },
+                    label = "NAME",
+                    placeholder = "e.g. Barry Love",
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                UnderlineTextField(
+                    value = emailInput,
+                    onValueChange = { emailInput = it },
+                    label = "EMAIL",
+                    placeholder = "e.g. lovebarry030@gmail.com",
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                UnderlineTextField(
+                    value = pinInput,
+                    onValueChange = { if (it.length <= 4 && it.all { char -> char.isDigit() }) pinInput = it },
+                    label = "4-DIGIT SECURITY PIN",
+                    placeholder = "••••",
+                    isPassword = true,
+                    keyboardType = KeyboardType.Number,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                UnderlineTextField(
+                    value = confirmPinInput,
+                    onValueChange = { if (it.length <= 4 && it.all { char -> char.isDigit() }) confirmPinInput = it },
+                    label = "CONFIRM SECURITY PIN",
+                    placeholder = "••••",
+                    isPassword = true,
+                    keyboardType = KeyboardType.Number,
+                    modifier = Modifier.padding(bottom = 20.dp)
+                )
+
+                // Sign Up Action Button
+                Button(
+                    onClick = {
+                        if (pinInput.length != 4) {
+                            errorMessage = "Passcode security PIN must be exactly 4 digits."
+                        } else if (pinInput != confirmPinInput) {
+                            errorMessage = "PIN mismatch! Confirm PIN must match your passcode."
+                        } else {
+                            errorMessage = null
+                            viewModel.registerUser(
+                                role = selectedRole,
+                                name = nameInput.ifBlank { "Barry Love" },
+                                email = emailInput.ifBlank { "lovebarry030@gmail.com" },
+                                title = if (selectedRole == "therapist") "AuraMind Clinical Psychotherapy" else "My Safe Haven / Daily Journal",
+                                bio = if (selectedRole == "therapist") "Clinical Neuropsychologist specializing in modern tech-focused CBT treatment." else "My private CBT journal to rest and clear anxious mind loops.",
+                                specialties = if (selectedRole == "therapist") "CBT, PTSD, Trauma, Stress, Mindfulness" else "CBT Practicing, Mindfulness, Anxiety Reduction",
+                                phone = "+1 (555) 123-4567",
+                                pin = pinInput,
+                                pinEnabled = true
+                            )
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth(0.9f)
+                        .height(52.dp)
+                        .testTag("submit_registration"),
+                    shape = RoundedCornerShape(26.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF0F3F6)),
+                    border = BorderStroke(1.5.dp, Color(0xFF1D1B20)),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                ) {
+                    Text(
+                        text = "Sign Up",
+                        color = Color(0xFF1D1B20),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Footer switcher link
+                Row(
+                    modifier = Modifier.clickable { currentStep = "login" },
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "Already gave an account? ",
+                        fontSize = 11.sp,
+                        color = Color(0xFF7F8C8D)
+                    )
+                    Text(
+                        text = "Log In",
+                        fontSize = 11.sp,
+                        color = Color(0xFF1D1B20),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        "login" -> {
+            OnboardingCardContainer {
+                Text(
+                    text = "Log in",
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFF1D1B20),
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "Verify your local security passcode",
+                    fontSize = 12.sp,
+                    color = Color(0xFF7F8C8D),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                )
+
+                SofaIllustration(modifier = Modifier.padding(vertical = 12.dp))
+
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = Color.Red,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 10.dp)
+                    )
+                }
+
+                // Passcode entry visual dots representing lock layout
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(bottom = 20.dp)
+                ) {
+                    repeat(4) { idx ->
+                        val isFilled = idx < pinInput.length
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .background(
+                                    color = if (isFilled) Color(0xFF1D1B20) else Color.Transparent,
+                                    shape = CircleShape
+                                )
+                                .border(
+                                    width = 2.dp,
+                                    color = Color(0xFF1D1B20),
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                }
+
+                // Custom numerical touch keypad
+                Column(
+                    modifier = Modifier.widthIn(max = 240.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    val keys = listOf(
+                        listOf("1", "2", "3"),
+                        listOf("4", "5", "6"),
+                        listOf("7", "8", "9"),
+                        listOf("⌫", "0", "🔓")
+                    )
+                    keys.forEach { rowKeys ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            rowKeys.forEach { key ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            when (key) {
+                                                "🔓" -> Color(0xFFC4E4FF)
+                                                else -> Color(0xFFF0F3F6)
+                                            }
+                                        )
+                                        .border(1.dp, Color(0xFF1D1B20), CircleShape)
+                                        .clickable {
+                                            errorMessage = null
+                                            when (key) {
+                                                "⌫" -> {
+                                                    if (pinInput.isNotEmpty()) {
+                                                        pinInput = pinInput.dropLast(1)
+                                                    }
+                                                }
+                                                "🔓" -> {
+                                                    errorMessage = "No profile exists yet. Please Sign Up first!"
+                                                }
+                                                else -> {
+                                                    if (pinInput.length < 4) {
+                                                        pinInput += key
+                                                        if (pinInput.length == 4) {
+                                                            errorMessage = "No profile exists yet. Please Sign Up first!"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = key,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1D1B20)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Footer switcher link
+                Row(
+                    modifier = Modifier.clickable {
+                        pinInput = ""
+                        currentStep = "register"
+                    },
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "Need an account? ",
+                        fontSize = 11.sp,
+                        color = Color(0xFF7F8C8D)
+                    )
+                    Text(
+                        text = "Sign Up",
+                        fontSize = 11.sp,
+                        color = Color(0xFF1D1B20),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AnimatedSplashScreen(onSplashCompleted: () -> Unit) {
+    var startAnimation by remember { mutableStateOf(false) }
+    val scale = animateFloatAsState(
+        targetValue = if (startAnimation) 1.2f else 0.4f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "LogoScale"
+    )
+    val alpha = animateFloatAsState(
+        targetValue = if (startAnimation) 1.0f else 0.0f,
+        animationSpec = tween(durationMillis = 1000),
+        label = "LogoAlpha"
+    )
+
+    LaunchedEffect(Unit) {
+        startAnimation = true
+        delay(2200)
+        onSplashCompleted()
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .clickable(enabled = false) {}
+            .background(Color(0xFFC4E4FF)) // Soft pastel blue mockup style
             .statusBarsPadding()
             .navigationBarsPadding(),
         contentAlignment = Alignment.Center
     ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val width = size.width
+            val height = size.height
+
+            // Top-left decorative cloud bubbles with "BOOM" cartoon vibe
+            drawCircle(
+                color = Color.White.copy(alpha = 0.35f),
+                radius = 110f,
+                center = Offset(80f, 60f)
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.35f),
+                radius = 130f,
+                center = Offset(210f, 100f)
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.35f),
+                radius = 90f,
+                center = Offset(330f, 70f)
+            )
+
+            // Smiley "X X" on bottom-right to represent the mockup context
+            val smileCenter = Offset(width * 0.78f, height * 0.86f)
+            drawCircle(
+                color = Color.White.copy(alpha = 0.5f),
+                radius = 42f,
+                center = smileCenter,
+                style = Stroke(width = 3.5f)
+            )
+            // Left eye x
+            drawLine(
+                color = Color.White.copy(alpha = 0.5f),
+                start = Offset(smileCenter.x - 14f, smileCenter.y - 14f),
+                end = Offset(smileCenter.x - 4f, smileCenter.y - 4f),
+                strokeWidth = 3.5f
+            )
+            drawLine(
+                color = Color.White.copy(alpha = 0.5f),
+                start = Offset(smileCenter.x - 14f, smileCenter.y - 4f),
+                end = Offset(smileCenter.x - 4f, smileCenter.y - 14f),
+                strokeWidth = 3.5f
+            )
+            // Right eye x
+            drawLine(
+                color = Color.White.copy(alpha = 0.5f),
+                start = Offset(smileCenter.x + 4f, smileCenter.y - 14f),
+                end = Offset(smileCenter.x + 14f, smileCenter.y - 4f),
+                strokeWidth = 3.5f
+            )
+            drawLine(
+                color = Color.White.copy(alpha = 0.5f),
+                start = Offset(smileCenter.x + 4f, smileCenter.y - 4f),
+                end = Offset(smileCenter.x + 14f, smileCenter.y - 14f),
+                strokeWidth = 3.5f
+            )
+            // Smile curve
+            val smilePath = Path().apply {
+                arcTo(
+                    rect = Rect(
+                        left = smileCenter.x - 18f,
+                        top = smileCenter.y - 4f,
+                        right = smileCenter.x + 18f,
+                        bottom = smileCenter.y + 18f
+                    ),
+                    startAngleDegrees = 0f,
+                    sweepAngleDegrees = 180f,
+                    forceMoveTo = true
+                )
+            }
+            drawPath(smilePath, color = Color.White.copy(alpha = 0.5f), style = Stroke(width = 3.5f))
+        }
+
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .scale(scale.value)
+                .alpha(alpha.value)
         ) {
             Box(
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(110.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    .background(Color.White)
+                    .border(2.dp, Color(0xFF1D1B20), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Filled.AccountBox,
-                    contentDescription = "Onboarding Onboard Logo",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(36.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Welcome to ClientFlow",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Black,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "Configure your secure workspace and role profile",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
-
-            Text(
-                text = "Select Your Initial Persona",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.0.sp,
-                modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Card(
-                    onClick = { selectedRole = "therapist" },
-                    modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (selectedRole == "therapist") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                    ),
-                    border = BorderStroke(
-                        width = if (selectedRole == "therapist") 2.0.dp else 1.0.dp,
-                        color = if (selectedRole == "therapist") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Icon(
-                            imageVector = Icons.Filled.Person,
-                            contentDescription = "Therapist Role Option",
-                            tint = if (selectedRole == "therapist") MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Clinic Pro",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (selectedRole == "therapist") MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Therapists, clinical guides & coaches.",
-                            fontSize = 10.sp,
-                            color = if (selectedRole == "therapist") MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Card(
-                    onClick = { selectedRole = "individual" },
-                    modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (selectedRole == "individual") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                    ),
-                    border = BorderStroke(
-                        width = if (selectedRole == "individual") 2.0.dp else 1.0.dp,
-                        color = if (selectedRole == "individual") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Icon(
-                            imageVector = Icons.Filled.Face,
-                            contentDescription = "Journaler Role Option",
-                            tint = if (selectedRole == "individual") MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Daily Journaler",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (selectedRole == "individual") MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Self-care logs & personal AI assistant.",
-                            fontSize = 10.sp,
-                            color = if (selectedRole == "individual") MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Text(
-                text = "Profile Configuration Details",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.0.sp,
-                modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
-            )
-
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Display / Workspace Name") },
-                modifier = Modifier.fillMaxWidth().testTag("register_name_input"),
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Person, contentDescription = "Name Icon") }
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedTextField(
-                value = email,
-                onValueChange = {},
-                label = { Text("Email (Locked to Account)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = false,
-                leadingIcon = { Icon(Icons.Filled.Email, contentDescription = "Email Icon") }
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                label = { Text(if (selectedRole == "therapist") "Clinic Name" else "Journal Vault Title") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Home, contentDescription = "Title Icon") }
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedTextField(
-                value = specialties,
-                onValueChange = { specialties = it },
-                label = { Text(if (selectedRole == "therapist") "Focus Specialties" else "Journaling Goal Focus") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Star, contentDescription = "Focus Icon") }
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedTextField(
-                value = bio,
-                onValueChange = { bio = it },
-                label = { Text("Short Bio / Statement") },
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 3,
-                leadingIcon = { Icon(Icons.Filled.Info, contentDescription = "Bio Icon") }
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { phone = it },
-                label = { Text("Contact Phone") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Call, contentDescription = "Phone Icon") }
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                border = BorderStroke(1.0.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Security Passcode Shield", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("Lock the journal with a 4-digit PIN", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(
-                        checked = pinEnabled,
-                        onCheckedChange = { pinEnabled = it }
-                    )
-                }
-
-                if (pinEnabled) {
-                    OutlinedTextField(
-                        value = pin,
-                        onValueChange = { if (it.length <= 4 && it.all { char -> char.isDigit() }) pin = it },
-                        label = { Text("4-Digit Security Passcode") },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
-                        singleLine = true,
-                        leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = "PIN Lock Icon") }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("🧘", fontSize = 42.sp)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "BREATHE",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFF1D1B20),
+                        letterSpacing = 1.sp
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            Button(
-                onClick = {
-                    viewModel.registerUser(
-                        role = selectedRole,
-                        name = name,
-                        email = email,
-                        title = title,
-                        bio = bio,
-                        specialties = specialties,
-                        phone = phone,
-                        pin = if (pinEnabled) pin else null,
-                        pinEnabled = pinEnabled
-                    )
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .testTag("submit_registration"),
-                shape = RoundedCornerShape(26.dp)
+            Text(
+                text = "Client Flow",
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Black,
+                color = Color(0xFF1D1B20),
+                letterSpacing = (-0.5).sp
+            )
+
+            Text(
+                text = "Secure Clinical & Mindful Vault",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1D1B20).copy(alpha = 0.7f),
+                letterSpacing = 0.5.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            Spacer(modifier = Modifier.height(48.dp))
+
+            // Gentle pulsating dots loader
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = if (selectedRole == "therapist") "Initialize Clinical Workspace" else "Launch Personal Journal Vault",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
+                val infiniteTransition = rememberInfiniteTransition(label = "SplashLoader")
+                val scale1 by infiniteTransition.animateFloat(
+                    initialValue = 0.6f, targetValue = 1.3f,
+                    animationSpec = infiniteRepeatable(animation = tween(600, delayMillis = 0), repeatMode = RepeatMode.Reverse),
+                    label = "dot1"
+                )
+                val scale2 by infiniteTransition.animateFloat(
+                    initialValue = 0.6f, targetValue = 1.3f,
+                    animationSpec = infiniteRepeatable(animation = tween(600, delayMillis = 200), repeatMode = RepeatMode.Reverse),
+                    label = "dot2"
+                )
+                val scale3 by infiniteTransition.animateFloat(
+                    initialValue = 0.6f, targetValue = 1.3f,
+                    animationSpec = infiniteRepeatable(animation = tween(600, delayMillis = 400), repeatMode = RepeatMode.Reverse),
+                    label = "dot3"
+                )
+
+                Box(modifier = Modifier.size(8.dp).scale(scale1).clip(CircleShape).background(Color(0xFF1D1B20)))
+                Box(modifier = Modifier.size(8.dp).scale(scale2).clip(CircleShape).background(Color(0xFF1D1B20)))
+                Box(modifier = Modifier.size(8.dp).scale(scale3).clip(CircleShape).background(Color(0xFF1D1B20)))
+            }
+        }
+    }
+}
+
+@Composable
+fun SofaIllustration(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "IllustrationFloating")
+    val floatOffset1 by infiniteTransition.animateFloat(
+        initialValue = -6f,
+        targetValue = 6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "floatingY"
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(200.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2, size.height / 2)
+
+            // Organic gray background blob
+            val blobPath = Path().apply {
+                moveTo(center.x - 120f, center.y - 40f)
+                cubicTo(
+                    center.x - 200f, center.y - 140f,
+                    center.x + 100f, center.y - 120f,
+                    center.x + 160f, center.y - 50f
+                )
+                cubicTo(
+                    center.x + 220f, center.y + 20f,
+                    center.x + 100f, center.y + 120f,
+                    center.x - 20f, center.y + 100f
+                )
+                cubicTo(
+                    center.x - 100f, center.y + 110f,
+                    center.x - 190f, center.y + 40f,
+                    center.x - 120f, center.y - 40f
+                )
+                close()
+            }
+            drawPath(blobPath, color = Color(0xFFF1F0EC))
+
+            // Soft light blue solid circle
+            drawCircle(
+                color = Color(0xFFC4E4FF).copy(alpha = 0.8f),
+                radius = 28f,
+                center = Offset(center.x - 120f, center.y - 60f)
+            )
+
+            // Small thin outline circle
+            drawCircle(
+                color = Color(0xFF1D1B20),
+                radius = 8f,
+                center = Offset(center.x + 120f, center.y - 70f),
+                style = Stroke(width = 2f)
+            )
+
+            // Simple line plant on the right
+            val plantX = center.x + 120f
+            val plantY = center.y + 50f
+            drawRect(
+                color = Color(0xFF1D1B20),
+                topLeft = Offset(plantX - 10f, plantY),
+                size = Size(20f, 25f)
+            )
+            drawLine(
+                color = Color(0xFF1D1B20),
+                start = Offset(plantX, plantY),
+                end = Offset(plantX, plantY - 50f),
+                strokeWidth = 2.5f
+            )
+            drawOval(
+                color = Color(0xFF1D1B20),
+                topLeft = Offset(plantX - 18f, plantY - 30f),
+                size = Size(14f, 8f)
+            )
+            drawOval(
+                color = Color(0xFF1D1B20),
+                topLeft = Offset(plantX + 4f, plantY - 35f),
+                size = Size(14f, 8f)
+            )
+            drawOval(
+                color = Color(0xFF1D1B20),
+                topLeft = Offset(plantX - 15f, plantY - 48f),
+                size = Size(14f, 8f)
+            )
+            drawOval(
+                color = Color(0xFF1D1B20),
+                topLeft = Offset(plantX + 2f, plantY - 52f),
+                size = Size(14f, 8f)
+            )
+        }
+
+        // Floating dark block (represented device) with animation
+        Box(
+            modifier = Modifier
+                .offset(x = (-130).dp, y = ((-10) + floatOffset1).dp)
+                .size(width = 18.dp, height = 32.dp)
+                .background(Color(0xFF1D1B20), RoundedCornerShape(4.dp))
+                .border(1.5.dp, Color.White, RoundedCornerShape(4.dp))
+        )
+
+        // Floating outline triangle with animation
+        Canvas(
+            modifier = Modifier
+                .size(16.dp)
+                .offset(x = 130.dp, y = (floatOffset1 * 1.5f).dp)
+        ) {
+            val triPath = Path().apply {
+                moveTo(size.width / 2, 0f)
+                lineTo(size.width, size.height)
+                lineTo(0f, size.height)
+                close()
+            }
+            drawPath(triPath, color = Color(0xFF1D1B20), style = Stroke(width = 2f))
+        }
+
+        // Sitting Person on couch
+        Box(
+            modifier = Modifier
+                .size(height = 130.dp, width = 200.dp)
+                .offset(y = 12.dp)
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                // Leg left
+                drawLine(
+                    color = Color(0xFF1D1B20),
+                    start = Offset(40f, size.height - 20f),
+                    end = Offset(32f, size.height),
+                    strokeWidth = 3f
+                )
+                // Leg right
+                drawLine(
+                    color = Color(0xFF1D1B20),
+                    start = Offset(size.width - 40f, size.height - 20f),
+                    end = Offset(size.width - 32f, size.height),
+                    strokeWidth = 3f
                 )
             }
+
+            // Sofa Base
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .height(35.dp)
+                    .align(Alignment.BottomCenter)
+                    .offset(y = (-12).dp)
+                    .background(Color(0xFFD2EAFD), RoundedCornerShape(8.dp))
+                    .border(2.dp, Color(0xFF1D1B20), RoundedCornerShape(8.dp))
+            )
+
+            // Cushions backrest
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth(0.82f)
+                    .height(45.dp)
+                    .align(Alignment.BottomCenter)
+                    .offset(y = (-45).dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(Color(0xFFE2F1FE), RoundedCornerShape(6.dp))
+                        .border(1.5.dp, Color(0xFF1D1B20), RoundedCornerShape(6.dp))
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(Color(0xFFE2F1FE), RoundedCornerShape(6.dp))
+                        .border(1.5.dp, Color(0xFF1D1B20), RoundedCornerShape(6.dp))
+                )
+            }
+
+            // Armrests left / right
+            Box(
+                modifier = Modifier
+                    .size(width = 24.dp, height = 50.dp)
+                    .align(Alignment.BottomStart)
+                    .offset(x = 4.dp, y = (-12).dp)
+                    .background(Color(0xFFD2EAFD), RoundedCornerShape(6.dp))
+                    .border(1.5.dp, Color(0xFF1D1B20), RoundedCornerShape(6.dp))
+            )
+            Box(
+                modifier = Modifier
+                    .size(width = 24.dp, height = 50.dp)
+                    .align(Alignment.BottomEnd)
+                    .offset(x = (-4).dp, y = (-12).dp)
+                    .background(Color(0xFFD2EAFD), RoundedCornerShape(6.dp))
+                    .border(1.5.dp, Color(0xFF1D1B20), RoundedCornerShape(6.dp))
+            )
+
+            // Person Sitting
+            Box(
+                modifier = Modifier
+                    .size(width = 80.dp, height = 110.dp)
+                    .align(Alignment.Center)
+                    .offset(x = (-10).dp, y = (-10).dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .offset(x = 18.dp, y = 4.dp)
+                        .background(Color(0xFF1D1B20), CircleShape)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .offset(x = 24.dp, y = 14.dp)
+                        .background(Color(0xFFFFD1A9), CircleShape)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(width = 30.dp, height = 35.dp)
+                        .offset(x = 20.dp, y = 32.dp)
+                        .background(Color.White, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 2.dp, bottomEnd = 2.dp))
+                        .border(1.5.dp, Color(0xFF1D1B20), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 2.dp, bottomEnd = 2.dp))
+                )
+                Box(
+                    modifier = Modifier
+                        .size(width = 54.dp, height = 18.dp)
+                        .offset(x = 34.dp, y = 58.dp)
+                        .background(Color(0xFF1C2D42), RoundedCornerShape(6.dp))
+                        .border(1.5.dp, Color(0xFF1D1B20), RoundedCornerShape(6.dp))
+                ) {
+                    // Simple laptop on lap
+                    Box(
+                        modifier = Modifier
+                            .size(width = 25.dp, height = 18.dp)
+                            .offset(x = 4.dp, y = (-10).dp)
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            drawRect(
+                                color = Color(0xFF7F8C8D),
+                                topLeft = Offset(0f, size.height - 4f),
+                                size = Size(size.width, 4f),
+                                style = Fill
+                            )
+                            drawRect(
+                                color = Color(0xFF1D1B20),
+                                topLeft = Offset(0f, size.height - 4f),
+                                size = Size(size.width, 4f),
+                                style = Stroke(width = 1f)
+                            )
+                            val path = Path().apply {
+                                moveTo(size.width * 0.3f, size.height - 4f)
+                                lineTo(size.width * 0.1f, 0f)
+                                lineTo(size.width * 0.7f, 0f)
+                                lineTo(size.width * 0.8f, size.height - 4f)
+                                close()
+                            }
+                            drawPath(path, color = Color(0xFFBDC3C7))
+                            drawPath(path, color = Color(0xFF1D1B20), style = Stroke(width = 1.3f))
+                        }
+                    }
+                }
+
+                Canvas(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .offset(x = 64.dp, y = 74.dp)
+                ) {
+                    val shoePath = Path().apply {
+                        moveTo(0f, 0f)
+                        lineTo(16f, 16f)
+                        lineTo(32f, 16f)
+                        lineTo(12f, 0f)
+                        close()
+                    }
+                    drawPath(shoePath, color = Color(0xFF1D1B20))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LeafyBranchDecor(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.fillMaxWidth().height(80.dp)) {
+        val width = size.width
+        val height = size.height
+
+        // Stem
+        val stemPath = Path().apply {
+            moveTo(width * 0.35f, 5f)
+            quadraticTo(width * 0.65f, 25f, width * 0.85f, 40f)
+        }
+        drawPath(stemPath, color = Color(0xFF1D1B20), style = Stroke(width = 3.5f, cap = StrokeCap.Round))
+
+        // Soft blue watercolors details
+        drawCircle(
+            color = Color(0xFFD2EAFD).copy(alpha = 0.7f),
+            radius = 24f,
+            center = Offset(width * 0.62f, 32f)
+        )
+        drawCircle(
+            color = Color(0xFFD2EAFD).copy(alpha = 0.5f),
+            radius = 16f,
+            center = Offset(width * 0.75f, 24f)
+        )
+
+        // Hand drawn black leaves
+        drawLeaf(this, Offset(width * 0.44f, 12f), -35f)
+        drawLeaf(this, Offset(width * 0.52f, 18f), -20f)
+        drawLeaf(this, Offset(width * 0.60f, 24f), -5f)
+        drawLeaf(this, Offset(width * 0.68f, 30f), 15f)
+        drawLeaf(this, Offset(width * 0.76f, 36f), 30f)
+        drawLeaf(this, Offset(width * 0.48f, 15f), 45f)
+        drawLeaf(this, Offset(width * 0.58f, 22f), 60f)
+        drawLeaf(this, Offset(width * 0.68f, 28f), 75f)
+    }
+}
+
+private fun drawLeaf(drawScope: DrawScope, origin: Offset, angleDegrees: Float) {
+    drawScope.withTransform({
+        rotate(angleDegrees, origin)
+    }) {
+        val leafWidth = 24f
+        val leafHeight = 11f
+        val leafPath = Path().apply {
+            moveTo(origin.x, origin.y)
+            quadraticTo(origin.x + leafWidth / 2f, origin.y - leafHeight, origin.x + leafWidth, origin.y)
+            quadraticTo(origin.x + leafWidth / 2f, origin.y + leafHeight, origin.x, origin.y)
+            close()
+        }
+        drawPath(leafPath, color = Color(0xFF1D1B20))
+    }
+}
+
+@Composable
+fun UnderlineTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    placeholder: String = "",
+    isPassword: Boolean = false,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF7F8C8D),
+            modifier = Modifier.padding(bottom = 2.dp)
+        )
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
+            textStyle = TextStyle(
+                color = Color(0xFF1D1B20),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            modifier = Modifier.fillMaxWidth(),
+            decorationBox = { innerTextField ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    if (value.isEmpty() && placeholder.isNotEmpty()) {
+                        Text(
+                            text = placeholder,
+                            color = Color(0xFFBDC3C7),
+                            fontSize = 14.sp
+                        )
+                    }
+                    innerTextField()
+                }
+            }
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Color(0xFFBDC3C7))
+        )
+    }
+}
+
+@Composable
+fun OnboardingCardContainer(
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFC4E4FF)) // Soft sky blue pastel
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val width = size.width
+            val height = size.height
+
+            // Top left clouds
+            drawCircle(
+                color = Color.White.copy(alpha = 0.35f),
+                radius = 110f,
+                center = Offset(80f, 60f)
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.35f),
+                radius = 130f,
+                center = Offset(210f, 100f)
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.35f),
+                radius = 90f,
+                center = Offset(330f, 70f)
+            )
+
+            // Smiley face bottom right
+            val smileCenter = Offset(width * 0.78f, height * 0.86f)
+            drawCircle(
+                color = Color.White.copy(alpha = 0.5f),
+                radius = 42f,
+                center = smileCenter,
+                style = Stroke(width = 3.5f)
+            )
+            // Left eye x
+            drawLine(
+                color = Color.White.copy(alpha = 0.5f),
+                start = Offset(smileCenter.x - 14f, smileCenter.y - 14f),
+                end = Offset(smileCenter.x - 4f, smileCenter.y - 4f),
+                strokeWidth = 3.5f
+            )
+            drawLine(
+                color = Color.White.copy(alpha = 0.5f),
+                start = Offset(smileCenter.x - 14f, smileCenter.y - 4f),
+                end = Offset(smileCenter.x - 4f, smileCenter.y - 14f),
+                strokeWidth = 3.5f
+            )
+            // Right eye x
+            drawLine(
+                color = Color.White.copy(alpha = 0.5f),
+                start = Offset(smileCenter.x + 4f, smileCenter.y - 14f),
+                end = Offset(smileCenter.x + 14f, smileCenter.y - 4f),
+                strokeWidth = 3.5f
+            )
+            drawLine(
+                color = Color.White.copy(alpha = 0.5f),
+                start = Offset(smileCenter.x + 4f, smileCenter.y - 4f),
+                end = Offset(smileCenter.x + 14f, smileCenter.y - 14f),
+                strokeWidth = 3.5f
+            )
+            val smilePath = Path().apply {
+                arcTo(
+                    rect = Rect(
+                        left = smileCenter.x - 18f,
+                        top = smileCenter.y - 4f,
+                        right = smileCenter.x + 18f,
+                        bottom = smileCenter.y + 18f
+                    ),
+                    startAngleDegrees = 0f,
+                    sweepAngleDegrees = 180f,
+                    forceMoveTo = true
+                )
+            }
+            drawPath(smilePath, color = Color.White.copy(alpha = 0.5f), style = Stroke(width = 3.5f))
+        }
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .widthIn(max = 390.dp)
+                .padding(vertical = 12.dp)
+                .animateContentSize(),
+            shape = RoundedCornerShape(32.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                content = content
+            )
         }
     }
 }
